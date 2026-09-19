@@ -1,0 +1,28 @@
+[versions]
+## Gradle Plugins
+fix-javadoc = "1.19" # https://github.com/mfnalex/gradle-fix-javadoc-plugin
+feather = "0.8.2" # https://github.com/ryderbelserion/Feather
+shadow = "9.6.1" # https://github.com/GradleUp/shadow
+
+#### Publishing Link
+url = "https://repo.crazycrew.us/releases"
+[libraries]
+# https://github.com/ryderbelserion/Feather
+feather-patcher = { module = "com.ryderbelserion.feather.patcher:com.ryderbelserion.feather.patcher.gradle.plugin", version.ref = "feather" }
+
+# https://github.com/mfnalex/gradle-fix-javadoc-plugin/
+fix-javadoc = { module = "com.jeff-media.fix-javadoc-plugin:com.jeff-media.fix-javadoc-plugin.gradle.plugin", version.ref = "fix-javadoc" }
+
+# https://github.com/ryderbelserion/Feather
+feather-core = { module = "com.ryderbelserion.feather.core:com.ryderbelserion.feather.core.gradle.plugin", version.ref = "feather" }
+
+# https://github.com/GradleUp/shadow
+shadow = { module = "com.gradleup.shadow:shadow-gradle-plugin", version.ref = "shadow" }
+
+[bundles]
+build = [
+    "feather-patcher",
+    "feather-core",
+    "fix-javadoc",
+    "shadow"
+]
