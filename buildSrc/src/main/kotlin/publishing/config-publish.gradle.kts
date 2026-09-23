@@ -1,3 +1,9 @@
+import org.gradle.api.artifacts.VersionCatalog
+import org.gradle.api.artifacts.VersionCatalogsExtension
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.external.javadoc.StandardJavadocDocletOptions
+import org.gradle.kotlin.dsl.*
+
 plugins {
     id("com.jeff-media.fix-javadoc-plugin")
 

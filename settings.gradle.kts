@@ -1,25 +1,39 @@
-rootProject.name = "configurate-parent"
-
-fun includeProject(pair: Pair<String, String>): Unit = includeProject(pair.first, pair.second)
-
-fun includeProject(name: String, block: ProjectDescriptor.() -> Unit) {
-    include(name)
-    project(":$name").apply(block)
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-fun includeProject(path: String, name: String) {
-    includeProject(name) {
-        this.projectDir = File(path)
-        this.name = name
+rootProject.name = "configurate-parent"
+
+listOf(
+    "src/target/core" to "core",
+
+    "src/target/examples" to "examples",
+
+    "src/target/format/jackson" to "jackson",
+    "src/target/format/gson" to "gson",
+    "src/target/format/yaml" to "yaml"
+).forEach {
+    val path = it.first
+
+    if (file(path).exists()) {
+        includeProject(path, it.second)
     }
 }
 
 fun includeProject(name: String) {
     includeProject(name) {
-        this.name = name
+        this.name = "${rootProject.name.lowercase()}-$name"
     }
 }
 
-if (file("src/target").exists()) {
-    includeProject("src/target" to "configurate")
+fun includeProject(folder: String, name: String) {
+    includeProject(name) {
+        this.name = "${rootProject.name.lowercase()}-$name"
+        this.projectDir = file(folder)
+    }
+}
+
+fun includeProject(name: String, block: ProjectDescriptor.() -> Unit) {
+    include(name)
+    project(":$name").apply(block)
 }
