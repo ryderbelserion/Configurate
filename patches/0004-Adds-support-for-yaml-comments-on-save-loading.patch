@@ -1,0 +1,651 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryder Belserion <contact@ryderbelserion.com>
+Date: Fri, 25 Sep 2026 16:54:48 -0400
+Subject: [PATCH] Adds support for yaml comments on save/loading.
+
+This is a version of https://github.com/SpongePowered/Configurate/pull/410 modified for the current version of Configurate.
+
+diff --git a/format/yaml/src/main/java/org/spongepowered/configurate/yaml/YamlConfigurationLoader.java b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/YamlConfigurationLoader.java
+index eef230948b2d8c646af6126926ea5e19cbc1b932..abcdf56e17bad9c09649952ad04feb987e462f7b 100644
+--- a/format/yaml/src/main/java/org/spongepowered/configurate/yaml/YamlConfigurationLoader.java
++++ b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/YamlConfigurationLoader.java
+@@ -22,15 +22,17 @@ import org.jspecify.annotations.Nullable;
+ import org.spongepowered.configurate.CommentedConfigurationNode;
+ import org.spongepowered.configurate.ConfigurationNode;
+ import org.spongepowered.configurate.ConfigurationOptions;
++import org.spongepowered.configurate.RepresentationHint;
+ import org.spongepowered.configurate.loader.AbstractConfigurationLoader;
+ import org.spongepowered.configurate.loader.CommentHandler;
+ import org.spongepowered.configurate.loader.CommentHandlers;
+ import org.spongepowered.configurate.util.UnmodifiableCollections;
++import org.spongepowered.configurate.yaml.enums.NodeStyle;
++import org.spongepowered.configurate.yaml.objects.YamlConstructor;
++import org.spongepowered.configurate.yaml.objects.YamlRepresenter;
+ import org.yaml.snakeyaml.DumperOptions;
+ import org.yaml.snakeyaml.LoaderOptions;
+ import org.yaml.snakeyaml.Yaml;
+-import org.yaml.snakeyaml.constructor.Constructor;
+-import org.yaml.snakeyaml.representer.Representer;
+ import java.io.BufferedReader;
+ import java.io.Writer;
+ import java.math.BigInteger;
+@@ -55,6 +57,25 @@ public final class YamlConfigurationLoader extends AbstractConfigurationLoader<C
+             Boolean.class, Integer.class, Long.class, BigInteger.class, Double.class, // numeric
+             byte[].class, String.class, Date.class, java.sql.Date.class, Timestamp.class); // complex types
+ 
++    /**
++     * The YAML scalar style this node should attempt to use.
++     *
++     * <p>If the chosen scalar style would produce syntactically invalid YAML, a
++     * valid one will replace it.</p>
++     *
++     * @since 4.2.0
++     */
++    public static final RepresentationHint<DumperOptions.ScalarStyle> SCALAR_STYLE = RepresentationHint.of("configurate:yaml/scalarstyle", DumperOptions.ScalarStyle.class);
++
++    /**
++     * The YAML node style to use for collection nodes. A {@code null} value
++     * will instruct the emitter to fall back to the
++     * {@link Builder#nodeStyle()} setting.
++     *
++     * @since 4.2.0
++     */
++    public static final RepresentationHint<NodeStyle> NODE_STYLE = RepresentationHint.of("configurate:yaml/nodestyle", NodeStyle.class);
++
+     /**
+      * Creates a new {@link YamlConfigurationLoader} builder.
+      *
+@@ -167,6 +188,7 @@ public final class YamlConfigurationLoader extends AbstractConfigurationLoader<C
+          */
+         public Builder nodeStyle(@Nullable final NodeStyle style) {
+             this.optionStateBuilder().value(NODE_STYLE, style);
++
+             return this;
+         }
+ 
+@@ -191,26 +213,41 @@ public final class YamlConfigurationLoader extends AbstractConfigurationLoader<C
+ 
+     private YamlConfigurationLoader(final Builder builder) {
+         super(builder, new CommentHandler[] {CommentHandlers.HASH});
++
+         this.loaderOpts = new LoaderOptions()
+             .setAcceptTabs(true)
+-            .setProcessComments(false);
++            .setProcessComments(true);
++
+         this.loaderOpts.setCodePointLimit(Integer.MAX_VALUE);
+ 
+         this.dumperOpts = builder.options;
+         this.dumperOpts.setDefaultFlowStyle(NodeStyle.asSnakeYaml(builder.optionState().value(Builder.NODE_STYLE)));
+         this.dumperOpts.setIndent(builder.optionState().value(Builder.INDENT));
++        this.dumperOpts.setProcessComments(true);
+     }
+ 
+     @Override
+     protected void loadInternal(final CommentedConfigurationNode node, final BufferedReader reader) {
+-        final Yaml yaml = new Yaml(new Constructor(this.loaderOpts), new Representer(this.dumperOpts), this.dumperOpts, this.loaderOpts);
+-        node.raw(yaml.load(reader));
++        final Yaml yaml = new Yaml(
++                new YamlConstructor(node.options(), this.loaderOpts),
++                new YamlRepresenter(true, this.dumperOpts), this.dumperOpts, this.loaderOpts);
++
++        CommentedConfigurationNode loaded = yaml.load(reader);
++
++        if (loaded == null) {
++            loaded = CommentedConfigurationNode.root(node.options());
++        }
++
++        node.from(loaded);
+     }
+ 
+     @Override
+     protected void saveInternal(final ConfigurationNode node, final Writer writer) {
+-        final Yaml yaml = new Yaml(new Constructor(this.loaderOpts), new Representer(this.dumperOpts), this.dumperOpts, this.loaderOpts);
+-        yaml.dump(node.raw(), writer);
++        final Yaml yaml = new Yaml(
++                new YamlConstructor(node.options(), this.loaderOpts),
++                new YamlRepresenter(true, this.dumperOpts), this.dumperOpts, this.loaderOpts);
++
++        yaml.dump(node, writer);
+     }
+ 
+     @Override
+diff --git a/format/yaml/src/main/java/org/spongepowered/configurate/yaml/NodeStyle.java b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/enums/NodeStyle.java
+similarity index 75%
+rename from format/yaml/src/main/java/org/spongepowered/configurate/yaml/NodeStyle.java
+rename to format/yaml/src/main/java/org/spongepowered/configurate/yaml/enums/NodeStyle.java
+index 241c8b58c282ba705cc5e113fe7d21a31e72a0ac..4a6d3bf0d17b49ba1db2c99f07678aa0cda3200c 100644
+--- a/format/yaml/src/main/java/org/spongepowered/configurate/yaml/NodeStyle.java
++++ b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/enums/NodeStyle.java
+@@ -14,7 +14,7 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
+-package org.spongepowered.configurate.yaml;
++package org.spongepowered.configurate.yaml.enums;
+ 
+ import org.jspecify.annotations.Nullable;
+ import org.yaml.snakeyaml.DumperOptions;
+@@ -34,8 +34,7 @@ public enum NodeStyle {
+     /**
+      * Always use <a href="https://yaml.org/spec/1.1/#id902924">flow style</a>.
+      */
+-    FLOW(DumperOptions.FlowStyle.FLOW)
+-    ;
++    FLOW(DumperOptions.FlowStyle.FLOW);
+ 
+     private final DumperOptions.FlowStyle snake;
+ 
+@@ -43,7 +42,15 @@ public enum NodeStyle {
+         this.snake = snake;
+     }
+ 
+-    static DumperOptions.FlowStyle asSnakeYaml(@Nullable final NodeStyle style) {
++    public static DumperOptions.FlowStyle asSnakeYaml(@Nullable final NodeStyle style) {
+         return style == null ? DumperOptions.FlowStyle.AUTO : style.snake;
+     }
++
++    public static @Nullable NodeStyle fromSnakeYaml(final DumperOptions.FlowStyle style) {
++        return switch (style) {
++            case AUTO -> null;
++            case BLOCK -> BLOCK;
++            case FLOW -> FLOW;
++        };
++    }
+ }
+\ No newline at end of file
+diff --git a/format/yaml/src/main/java/org/spongepowered/configurate/yaml/objects/YamlConstructor.java b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/objects/YamlConstructor.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..96d2c825f79884c62e2205079be88dbe737218f4
+--- /dev/null
++++ b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/objects/YamlConstructor.java
+@@ -0,0 +1,161 @@
++/*
++ * Configurate
++ * Copyright (C) zml and Configurate contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.spongepowered.configurate.yaml.objects;
++
++import org.jspecify.annotations.Nullable;
++import org.spongepowered.configurate.CommentedConfigurationNode;
++import org.spongepowered.configurate.ConfigurationNode;
++import org.spongepowered.configurate.ConfigurationOptions;
++import org.spongepowered.configurate.loader.AbstractConfigurationLoader;
++import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
++import org.spongepowered.configurate.yaml.enums.NodeStyle;
++import org.yaml.snakeyaml.LoaderOptions;
++import org.yaml.snakeyaml.comments.CommentLine;
++import org.yaml.snakeyaml.constructor.Constructor;
++import org.yaml.snakeyaml.nodes.MappingNode;
++import org.yaml.snakeyaml.nodes.Node;
++import org.yaml.snakeyaml.nodes.NodeId;
++import org.yaml.snakeyaml.nodes.NodeTuple;
++import org.yaml.snakeyaml.nodes.ScalarNode;
++import org.yaml.snakeyaml.nodes.SequenceNode;
++import org.yaml.snakeyaml.nodes.Tag;
++import java.util.Collection;
++import java.util.Collections;
++import java.util.List;
++import java.util.regex.Pattern;
++
++public class YamlConstructor extends Constructor {
++
++    private static final Pattern LINE_BREAK_PATTERN = Pattern.compile("\\R");
++
++    @Nullable ConfigurationOptions options;
++
++    public YamlConstructor(@Nullable final ConfigurationOptions options, final LoaderOptions loadingConfig) {
++        super(loadingConfig);
++
++        this.options = options;
++    }
++
++    @Override
++    public Object getSingleData(final Class<?> type) {
++        if (this.options == null) {
++            throw new IllegalStateException("options must be set before calling load!");
++        }
++
++        return super.getSingleData(type);
++    }
++
++    @Override
++    protected Object constructObjectNoCheck(final Node yamlNode) {
++        //noinspection DataFlowIssue guarenteed NonNull by getSingleData, which load(Reader) uses
++        final CommentedConfigurationNode node = CommentedConfigurationNode.root(this.options);
++
++        // alright, let's first check some interesting behavior.
++        // When you have a file with only empty lines (has to be at least two),
++        // a Tag of the type COMMENT will be executed.
++        // It'll have a blockComment of the type empty line.
++        // This is unlike the behavior of an empty file and a file with only comments,
++        // because both won't be seen as an object and will instead return null by Yaml#load.
++        // Let's filter out the multi-empty-lines behavior and return an empty node instead.
++        if (yamlNode.getTag() == Tag.COMMENT) {
++            return node;
++        }
++
++        if (yamlNode.getNodeId() == NodeId.mapping) {
++            // make sure to mark it as a map type, even if the map itself is empty
++            node.raw(Collections.emptyMap());
++
++            final MappingNode mapping = (MappingNode) yamlNode;
++
++            if (mapping.getFlowStyle() != null) {
++                node.hint(
++                        YamlConfigurationLoader.NODE_STYLE,
++                        NodeStyle.fromSnakeYaml(mapping.getFlowStyle())
++                );
++            }
++
++            for (final NodeTuple tuple : mapping.getValue()) {
++                final ConfigurationNode keyNode = (ConfigurationNode) this.constructObject(tuple.getKeyNode());
++                final Node valueNode = tuple.getValueNode();
++
++                // comments are on the key, not the value
++                node.node(keyNode.raw())
++                    .from((ConfigurationNode) constructObject(valueNode))
++                    .comment(commentFor(tuple.getKeyNode().getBlockComments()));
++            }
++
++            return node.comment(commentFor(yamlNode.getBlockComments()));
++        }
++
++        final Object raw = super.constructObjectNoCheck(yamlNode);
++
++        if (raw instanceof Collection<?> collection && yamlNode instanceof SequenceNode sequence) {
++            // make sure to mark it as a list type, even if the collection itself is empty
++            node.raw(Collections.emptyList());
++
++            if (sequence.getFlowStyle() != null) {
++                node.hint(
++                        YamlConfigurationLoader.NODE_STYLE,
++                        NodeStyle.fromSnakeYaml(sequence.getFlowStyle())
++                );
++            }
++
++            for (final Object value : collection) {
++                node.appendListNode().from((ConfigurationNode) value);
++            }
++        } else {
++            if (yamlNode instanceof ScalarNode scalarNode) {
++                node.hint(
++                        YamlConfigurationLoader.SCALAR_STYLE,
++                        scalarNode.getScalarStyle()
++                );
++            }
++
++            node.raw(raw);
++        }
++
++        return node.comment(commentFor(yamlNode.getBlockComments()));
++    }
++
++    private static @Nullable String commentFor(final @Nullable List<CommentLine> commentLines) {
++        if (commentLines == null || commentLines.isEmpty()) {
++            return null;
++        }
++
++        final StringBuilder outputBuilder = new StringBuilder();
++
++        for (final CommentLine line : commentLines) {
++            if (!outputBuilder.isEmpty()) {
++                outputBuilder.append(AbstractConfigurationLoader.CONFIGURATE_LINE_SEPARATOR);
++            }
++
++            final String lineStripped = removeLineBreaksForLine(line.getValue());
++
++            if (!lineStripped.isEmpty() && lineStripped.charAt(0) == ' ') {
++                outputBuilder.append(lineStripped, 1, lineStripped.length());
++            } else {
++                outputBuilder.append(lineStripped);
++            }
++        }
++
++        return outputBuilder.toString();
++    }
++
++    private static String removeLineBreaksForLine(final String line) {
++        return LINE_BREAK_PATTERN.matcher(line).replaceAll("");
++    }
++}
+\ No newline at end of file
+diff --git a/format/yaml/src/main/java/org/spongepowered/configurate/yaml/objects/YamlRepresenter.java b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/objects/YamlRepresenter.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4873cbbd1409b3d2cf1f9ddb048bc497c8974364
+--- /dev/null
++++ b/format/yaml/src/main/java/org/spongepowered/configurate/yaml/objects/YamlRepresenter.java
+@@ -0,0 +1,131 @@
++package org.spongepowered.configurate.yaml.objects;
++
++import org.jspecify.annotations.NullMarked;
++import org.spongepowered.configurate.CommentedConfigurationNodeIntermediary;
++import org.spongepowered.configurate.ConfigurationNode;
++import org.spongepowered.configurate.yaml.enums.NodeStyle;
++import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
++import org.yaml.snakeyaml.DumperOptions;
++import org.yaml.snakeyaml.comments.CommentLine;
++import org.yaml.snakeyaml.comments.CommentType;
++import org.yaml.snakeyaml.nodes.MappingNode;
++import org.yaml.snakeyaml.nodes.Node;
++import org.yaml.snakeyaml.nodes.NodeTuple;
++import org.yaml.snakeyaml.nodes.ScalarNode;
++import org.yaml.snakeyaml.nodes.SequenceNode;
++import org.yaml.snakeyaml.nodes.Tag;
++import org.yaml.snakeyaml.representer.Represent;
++import org.yaml.snakeyaml.representer.Representer;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.Collections;
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Collectors;
++import static org.spongepowered.configurate.loader.AbstractConfigurationLoader.CONFIGURATE_LINE_PATTERN;
++
++@NullMarked
++public class YamlRepresenter extends Representer {
++
++    private static final CommentLine BLANK_LINE = new CommentLine(null, null, "", CommentType.BLANK_LINE);
++
++    private final boolean padComments;
++
++    public YamlRepresenter(final boolean padComments, final DumperOptions options) {
++        super(options);
++
++        this.multiRepresenters.putIfAbsent(ConfigurationNode.class, new NodeRepresenter());
++        this.nullRepresenter = new EmptyNullRepresenter();
++        this.padComments = padComments;
++    }
++
++    private final class NodeRepresenter implements Represent {
++
++        @Override
++        public Node representData(final Object object) {
++            final ConfigurationNode node = (ConfigurationNode) object;
++
++            final Node yamlNode;
++            if (node.isMap()) {
++                final List<NodeTuple> children = new ArrayList<>();
++
++                boolean first = true;
++
++                for (Map.Entry<Object, ? extends ConfigurationNode> ent : node.childrenMap().entrySet()) {
++                    // SnakeYAML supports both key and value comments. Add the comments on the key
++                    final Node value = represent(ent.getValue());
++                    final Node key = represent(ent.getKey());
++
++                    key.setBlockComments(value.getBlockComments());
++                    value.setBlockComments(Collections.emptyList());
++
++                    if (!first && !(node.parent() != null && node.parent().isList()) && key.getBlockComments() != null && !key.getBlockComments().isEmpty()) {
++                        key.getBlockComments().addFirst(BLANK_LINE);
++                    }
++
++                    first = false;
++
++                    children.add(new NodeTuple(key, value));
++                }
++                yamlNode = new MappingNode(Tag.MAP, children, this.flowStyle(node));
++            } else if (node.isList()) {
++                final List<Node> children = new ArrayList<>();
++
++                for (ConfigurationNode ent : node.childrenList()) {
++                    children.add(represent(ent));
++                }
++
++                yamlNode = new SequenceNode(Tag.SEQ, children, this.flowStyle(node));
++            } else {
++                final Node optionNode = represent(node.rawScalar());
++                final DumperOptions.ScalarStyle requestedStyle = node.ownHint(YamlConfigurationLoader.SCALAR_STYLE);
++
++                if (optionNode instanceof ScalarNode scalar && requestedStyle != null) {
++                    yamlNode = new ScalarNode(
++                            scalar.getTag(),
++                            scalar.getValue(),
++                            scalar.getStartMark(),
++                            scalar.getEndMark(),
++                            scalar.getScalarStyle()
++                    );
++                } else {
++                    yamlNode = optionNode;
++                }
++            }
++
++            if (node instanceof CommentedConfigurationNodeIntermediary<?>) {
++                final String nodeComment = ((CommentedConfigurationNodeIntermediary<?>) node).comment();
++
++                if (nodeComment != null) {
++                    yamlNode.setBlockComments(Arrays.stream(CONFIGURATE_LINE_PATTERN.split(nodeComment)).map(this::commentLineFor).collect(Collectors.toList()));
++                }
++            }
++
++            return yamlNode;
++        }
++
++        private DumperOptions.FlowStyle flowStyle(final ConfigurationNode node) {
++            final NodeStyle requested = node.ownHint(YamlConfigurationLoader.NODE_STYLE);
++
++            return NodeStyle.asSnakeYaml(requested);
++        }
++
++        // adds a space to the comment.
++        private CommentLine commentLineFor(final String comment) {
++            if (comment.isEmpty()) {
++                return BLANK_LINE;
++            } else if (!YamlRepresenter.this.padComments || comment.charAt(0) == '#') {
++                return new CommentLine(null, null, comment, CommentType.BLOCK);
++            }
++
++            return new CommentLine(null, null, " " + comment, CommentType.BLOCK);
++        }
++    }
++
++    private static final class EmptyNullRepresenter implements Represent {
++        @Override
++        public Node representData(final Object data) {
++            return new ScalarNode(Tag.NULL, "", null, null, DumperOptions.ScalarStyle.PLAIN);
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/format/yaml/src/test/java/org/spongepowered/configurate/yaml/YamlConfigurationLoaderTest.java b/format/yaml/src/test/java/org/spongepowered/configurate/yaml/YamlConfigurationLoaderTest.java
+index fd86755cca74ea12623d213624a353db05a86231..4a19bd77adb289165f6f5f8a62138c03ece6d999 100644
+--- a/format/yaml/src/test/java/org/spongepowered/configurate/yaml/YamlConfigurationLoaderTest.java
++++ b/format/yaml/src/test/java/org/spongepowered/configurate/yaml/YamlConfigurationLoaderTest.java
+@@ -25,6 +25,7 @@ import org.spongepowered.configurate.CommentedConfigurationNode;
+ import org.spongepowered.configurate.ConfigurateException;
+ import org.spongepowered.configurate.ConfigurationNode;
+ import org.spongepowered.configurate.loader.ConfigurationLoader;
++import org.spongepowered.configurate.yaml.enums.NodeStyle;
+ import java.io.BufferedReader;
+ import java.io.IOException;
+ import java.io.InputStreamReader;
+@@ -32,7 +33,9 @@ import java.net.URL;
+ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
++import java.nio.file.Paths;
+ import java.util.ArrayList;
++import java.util.Collections;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Objects;
+@@ -53,7 +56,6 @@ class YamlConfigurationLoaderTest {
+         assertEquals("dragon", node.node("other", "op-level").raw());
+         assertEquals("dog park", node.node("other", "location").raw());
+ 
+-
+         final List<Map<String, List<String>>> fooList = new ArrayList<>(Objects.requireNonNull(node.node("foo").getList(new TypeToken<>() {})));
+         assertEquals(0, fooList.getFirst().get("bar").size());
+     }
+@@ -103,9 +105,127 @@ class YamlConfigurationLoaderTest {
+         assertEquals(readLines(this.getClass().getResource("write-expected.yml")), Files.readAllLines(target, StandardCharsets.UTF_8));
+     }
+ 
++    @Test
++    void testNonExistentFile() throws IOException {
++        final Path path = Paths.get("non-existent-file.yml");
++        final YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(path).build();
++
++        final ConfigurationNode actual = loader.load();
++        assertEquals(CommentedConfigurationNode.root(), actual);
++    }
++
++    @Test
++    void testEmptyFile(final @TempDir Path tempDir) throws IOException {
++        // an empty file should be seen as empty node, by default SnakeYaml returns null for loading an empty file.
++        // Check if it correctly gets mapped to an empty node.
++
++        // Configurate's Spotless settings require an empty row after the last row (so essentially making the file
++        // multiline), to bypass this we write an empty temp file and read that.
++        final Path emptyFile = tempDir.resolve("empty-file.yml");
++        Files.write(emptyFile, Collections.emptyList());
++
++        final YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(emptyFile).build();
++
++        final ConfigurationNode actual = loader.load();
++        assertEquals(CommentedConfigurationNode.root(), actual);
++    }
++
++    @Test
++    void testEmptyFileMultiline() throws IOException {
++        // a multiline file has at least some data (the fact that it has multiple lines), which is why it's handled
++        // differently inside SnakeYaml. This is seen as a mapping node with the Tag COMMENT.
++
++        final Path path = Paths.get("no-data-multiline.yml");
++        final YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(path).build();
++
++        final ConfigurationNode actual = loader.load();
++        assertEquals(CommentedConfigurationNode.root(), actual);
++    }
++
++    @Test
++    void testEmptyFileOnlyComments() throws IOException {
++        // just like 'empty file' and 'empty file multiline', this is kind of a weird situation.
++        // In SnakeYaml, when the file exists of just comments, the first event will be StreamEnd.
++        // getSingleNode will return null, getSingleData uses the Constructor of Tag Null, which just returns null.
++        // Make sure that we return an empty node there.
++
++        final Path path = Paths.get("no-data-just-comments.yml");
++        final YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(path).build();
++
++        final ConfigurationNode actual = loader.load();
++        assertEquals(CommentedConfigurationNode.root(), actual);
++    }
++
++    @Test
++    void testReadComments() throws IOException {
++        final ConfigurationNode expected = CommentedConfigurationNode.root(n ->
++                n.node("waffles-with-syrup")
++                        .comment("hello world")
++                        .act(p ->
++                                p.node("ingredients")
++                                        .comment("multi-line\ncomments")
++                                        .act(i -> {
++                                            i.appendListNode().set("waffles").comment("would you've guessed the ingredients?");
++                                            i.appendListNode().set("syrup").comment("I certainly didn't");
++                                        })
++                        ));
++
++        final Path path = Paths.get("comments-test.yml");
++        final YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(path).build();
++
++        final ConfigurationNode actual = loader.load();
++        assertEquals(expected, actual);
++    }
++
++    @Test
++    void testWriteComments(final @TempDir Path tempDir) throws IOException {
++        final Path target = tempDir.resolve("comments-write.yml");
++        final ConfigurationNode node = CommentedConfigurationNode.root(n ->
++                n.node("waffles-with-syrup")
++                        .comment("hello world")
++                        .act(p ->
++                                p.node("ingredients")
++                                        .comment("multi-line\ncomments")
++                                        .act(i -> {
++                                            i.appendListNode().set("waffles").comment("would you've guessed the ingredients?");
++                                            i.appendListNode().set("syrup").comment("I certainly didn't");
++                                        })
++                        ));
++
++        final YamlConfigurationLoader loader = YamlConfigurationLoader.builder()
++                .path(target)
++                .nodeStyle(NodeStyle.BLOCK)
++                .build();
++
++        loader.save(node);
++
++        assertContentsSame(this.getClass().getResource("comments-write.yml"), target);
++    }
++
++    @Test
++    void testReadWriteComments(final @TempDir Path tempDir) throws IOException {
++        final Path path = Paths.get("comments-test.yml");
++        final Path destination = tempDir.resolve("comments-readwrite.yml");
++
++        final YamlConfigurationLoader loader = YamlConfigurationLoader.builder()
++                .path(destination)
++                .path(path)
++                .nodeStyle(NodeStyle.BLOCK)
++                .build();
++
++        final ConfigurationNode sourceNode = loader.load();
++        loader.save(sourceNode);
++
++        assertContentsSame(this.getClass().getResource("comments-test.yml"), destination);
++    }
++
+     private static List<String> readLines(final URL source) throws IOException {
+         try (BufferedReader reader = new BufferedReader(new InputStreamReader(source.openStream(), StandardCharsets.UTF_8))) {
+             return reader.lines().collect(Collectors.toList());
+         }
+     }
++
++    private static void assertContentsSame(final URL expected, final Path actual) throws IOException {
++        assertEquals(String.join("\n", readLines(expected)), String.join("\n", Files.readAllLines(actual, StandardCharsets.UTF_8)));
++    }
+ }
+\ No newline at end of file
+diff --git a/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/comments-test.yml b/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/comments-test.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..cea852f3af6a9f4385a0cb96c9b2cdf75d88f6b7
+--- /dev/null
++++ b/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/comments-test.yml
+@@ -0,0 +1,9 @@
++# hello world
++waffles-with-syrup:
++    # multi-line
++    # comments
++    ingredients:
++    # would you've guessed the ingredients?
++        - waffles
++        # I certainly didn't
++        - syrup
+diff --git a/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/no-data-just-comments.yml b/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/no-data-just-comments.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..493d173ad411d5f5cf02a0f70250037e835cab45
+--- /dev/null
++++ b/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/no-data-just-comments.yml
+@@ -0,0 +1,2 @@
++# hello
++# what
+diff --git a/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/no-data-multiline.yml b/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/no-data-multiline.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b137891791fe96927ad78e64b0aad7bded08bdc
+--- /dev/null
++++ b/format/yaml/src/test/resources/org/spongepowered/configurate/yaml/no-data-multiline.yml
+@@ -0,0 +1 @@
++
