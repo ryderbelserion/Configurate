@@ -1,0 +1,33 @@
+name: Tasks List
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup Project
+        run: gradle create
+
+      - name: Setup Upstream
+        run: gradle clone
+
+      - name: Apply Patches
+        run: gradle apply
+
+      - name: Get Tasks
+        run: gradle tasks
