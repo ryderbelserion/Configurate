@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryder Belserion <contact@ryderbelserion.com>
+Date: Fri, 25 Sep 2026 16:55:39 -0400
+Subject: [PATCH] Update root project name
+
+
+diff --git a/examples/build.gradle.kts b/examples/build.gradle.kts
+index 6ed1efacafe75338b4c49117ab5ff760cb8f2eca..320f9bdbb802760324d6c3f00fc86c725a7bd97f 100644
+--- a/examples/build.gradle.kts
++++ b/examples/build.gradle.kts
+@@ -3,7 +3,7 @@ plugins {
+ }
+ 
+ dependencies {
+-    implementation(project(":configurate-parent-yaml"))
+-    implementation(project(":configurate-parent-gson"))
+-    implementation(project(":configurate-parent-core"))
+-}
++    implementation(project(":configurate-yaml"))
++    implementation(project(":configurate-gson"))
++    implementation(project(":configurate-core"))
++}
+\ No newline at end of file
+diff --git a/format/gson/build.gradle.kts b/format/gson/build.gradle.kts
+index e9b5d5aeda708633bed00091cd1076b5b877d0a3..3b40646845f6b608d345987535c7392a6e4e68f5 100644
+--- a/format/gson/build.gradle.kts
++++ b/format/gson/build.gradle.kts
+@@ -6,7 +6,7 @@ plugins {
+ project.group = "${rootProject.group}.gson"
+ 
+ dependencies {
+-    implementation(project(":configurate-parent-core"))
++    implementation(project(":configurate-core"))
+     implementation(libs.gson)
+ 
+     testImplementation(platform(libs.junit.bom))
+diff --git a/format/jackson/build.gradle.kts b/format/jackson/build.gradle.kts
+index 696828224a6915c9bc982d2e51f20749fa815ff7..09524acdd5e680b83cfcb6f49b7cda2f0bc12e1a 100644
+--- a/format/jackson/build.gradle.kts
++++ b/format/jackson/build.gradle.kts
+@@ -6,7 +6,7 @@ plugins {
+ project.group = "${rootProject.group}.jackson"
+ 
+ dependencies {
+-    implementation(project(":configurate-parent-core"))
++    implementation(project(":configurate-core"))
+     implementation(libs.jackson)
+ 
+     testImplementation(platform(libs.junit.bom))
+diff --git a/format/yaml/build.gradle.kts b/format/yaml/build.gradle.kts
+index 96eb15b37c4911b817eee56a7438d77ab8500c18..7984c77661b8c32d2257c11bb74a11e59e52bf68 100644
+--- a/format/yaml/build.gradle.kts
++++ b/format/yaml/build.gradle.kts
+@@ -6,7 +6,7 @@ plugins {
+ project.group = "${rootProject.group}.yaml"
+ 
+ dependencies {
+-    api(project(":configurate-parent-core"))
++    api(project(":configurate-core"))
+ 
+     implementation(libs.snakeyaml)
+ 
