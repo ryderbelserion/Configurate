@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryder Belserion <contact@ryderbelserion.com>
+Date: Sat, 26 Sep 2026 17:32:38 -0400
+Subject: [PATCH] Stop relocating dependencies
+
+
+diff --git a/core/build.gradle.kts b/core/build.gradle.kts
+index a679c27b363bb0a29361d6c6d6657d50ba339883..65e1d927f35949ba136e8c4dacba53f901bfca58 100644
+--- a/core/build.gradle.kts
++++ b/core/build.gradle.kts
+@@ -1,5 +1,5 @@
+ plugins {
+-    `java-plugin`
++    `shadow-plugin`
+     `config-publish`
+ }
+ 
+@@ -9,7 +9,10 @@ dependencies {
+ 
+     api(libs.geantyref)
+     api(libs.jspecify)
+-    api(libs.option)
++
++    api(libs.option) {
++        exclude(group = "org.jspecify", module = "jspecify")
++    }
+ 
+     testImplementation(platform(libs.junit.bom))
+     testImplementation(libs.assertj.core)
+diff --git a/format/gson/build.gradle.kts b/format/gson/build.gradle.kts
+index 3b40646845f6b608d345987535c7392a6e4e68f5..14a528641a89570bf2d7854c07c21f3a7cf4ed9e 100644
+--- a/format/gson/build.gradle.kts
++++ b/format/gson/build.gradle.kts
+@@ -1,5 +1,5 @@
+ plugins {
+-    `java-plugin`
++    `shadow-plugin`
+     `config-publish`
+ }
+ 
+diff --git a/format/jackson/build.gradle.kts b/format/jackson/build.gradle.kts
+index 09524acdd5e680b83cfcb6f49b7cda2f0bc12e1a..5c53526bc1d10ec16c4241baff8c8e825716568e 100644
+--- a/format/jackson/build.gradle.kts
++++ b/format/jackson/build.gradle.kts
+@@ -12,10 +12,4 @@ dependencies {
+     testImplementation(platform(libs.junit.bom))
+     testImplementation(libs.junit.api)
+     testImplementation(libs.guava)
+-}
+-
+-tasks {
+-    shadowJar {
+-        relocate("com.fasterxml.jackson.core", "${project.group}.internal.jackson")
+-    }
+ }
+\ No newline at end of file
+diff --git a/format/yaml/build.gradle.kts b/format/yaml/build.gradle.kts
+index 7984c77661b8c32d2257c11bb74a11e59e52bf68..687987075f074ec019a29b9443c67c5ca019f59e 100644
+--- a/format/yaml/build.gradle.kts
++++ b/format/yaml/build.gradle.kts
+@@ -12,10 +12,4 @@ dependencies {
+ 
+     testImplementation(platform(libs.junit.bom))
+     testImplementation(libs.junit.api)
+-}
+-
+-tasks {
+-    shadowJar {
+-        relocate("org.yaml.snakeyaml", "${project.group}.internal.snakeyaml")
+-    }
+ }
+\ No newline at end of file
