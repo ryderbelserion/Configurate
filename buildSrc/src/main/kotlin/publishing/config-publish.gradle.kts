@@ -33,7 +33,7 @@ tasks {
         publications {
             create<MavenPublication>("maven") {
                 groupId = rootProject.group as String
-                artifactId = project.name
+                artifactId = "${project.name}-api"
 
                 from(components["java"])
             }
