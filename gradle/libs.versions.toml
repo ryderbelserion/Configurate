@@ -9,7 +9,7 @@ jspecify = "1.0.0" # https://jspecify.dev/docs/using/
 
 ## File API
 snakeyaml = "2.8.0"
-jackson = "2.20.0"
+jackson = "2.22.3"
 gson = "2.8.0"
 
 ## Other API
